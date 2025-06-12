@@ -1,13 +1,14 @@
 import time
+import json
 import asyncio
 import requests
 import numpy as np
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 
 from deepsearcher.agent.deep_search import DeepSearch
 from deepsearcher.embedding.base import BaseEmbedding
 from deepsearcher.llm.base import BaseLLM
-from deepsearcher.utils import log
+from deepsearcher.utils import log,information_depth,web_query_deduplicator
 from deepsearcher.vector_db import RetrievalResult
 from deepsearcher.vector_db.base import BaseVectorDB, deduplicate_results
 from deepsearcher.offline_loading import search_with_searxng
@@ -163,6 +164,7 @@ class OnlineDeepSearch(DeepSearch):
         self.web_search_threshold = web_search_threshold
         self.max_web_searches_per_think = max_web_searches_per_think
         self.max_web_results = max_web_results
+        self.depth_assessor = information_depth.InformationDepthAssessor(self.embedding_model, self.llm)
 
         if self.enable_web_search:
             self._verify_searxng_availability()
@@ -192,27 +194,68 @@ class OnlineDeepSearch(DeepSearch):
     ) -> Tuple[dict, int]:
         """Comprehensively assess knowledge gaps, taking into account the global context"""
 
-        Retrieved_Information_Summary = self._generate_comprehensive_retrieval_summary(all_results)
-        Number_of_relevant_chunks_found = len(all_results)
-        Covered_Topics = list(global_state["covered_topics"])
-        Information_Depth = global_state["information_depth"]
-
-        knowledge_gap_assessment_prompt = KNOWLEDGE_GAP_ASSESSMENT_PROMPT.format(
-            query=query,
-            sub_queries=sub_queries,
-            retrieved_information_summary = Retrieved_Information_Summary,
-            number_of_relevant_chunks_found = Number_of_relevant_chunks_found,
-            covered_topics = Covered_Topics,
-            information_depth = Information_Depth,
+        # Perform comprehensive assessment using the assessor
+        overall_assessment, topic_analyses = self.depth_assessor.assess_comprehensive_information_depth(
+            query, sub_queries, all_results, global_state
         )
 
-        chat_response = self.llm.chat(
-            messages=[{"role": "user", "content": knowledge_gap_assessment_prompt}],
-            response_format={"type": "json_object"}
-        )
-        assessment = self.llm.literal_eval(chat_response.content)
+        # Update global state with information
+        self._update_global_state_with_analysis(global_state, topic_analyses)
 
-        return assessment, chat_response.total_tokens
+        # Log detailed analysis for debugging
+        log.color_print(f"<assessment> Detailed topic analysis: </assessment>")
+        for topic, analysis in topic_analyses.items():
+            log.color_print(
+                f"  - {topic}: Overall={analysis.overall_score:.3f}, Coverage={analysis.coverage_score:.3f}, Quality={analysis.quality_score:.3f}")
+
+        # Token count estimation (since we're using LLM calls for topic extraction)
+        estimated_tokens = len(query.split()) * 10 + len(sub_queries) * 20
+
+        return overall_assessment, estimated_tokens
+
+    def _update_global_state_with_analysis(self, global_state: dict, topic_analyses: Dict[str, information_depth.TopicAnalysis]):
+        """Update global knowledge state with enhanced analysis results"""
+
+        # Update covered topics
+        global_state["covered_topics"].update(topic_analyses.keys())
+
+        # Update information depth with comprehensive scores
+        for topic, analysis in topic_analyses.items():
+            global_state["information_depth"][topic] = {
+                "overall_score": analysis.overall_score,
+                "coverage": analysis.coverage_score,
+                "quality": analysis.quality_score,
+                "authority": analysis.authority_score,
+                "diversity": analysis.diversity_score,
+                "depth": analysis.depth_score,
+                "coherence": analysis.coherence_score,
+                "evidence_count": analysis.evidence_count,
+                "source_diversity": analysis.source_diversity
+            }
+
+        # Identify remaining gaps based on multiple criteria
+        remaining_gaps = []
+        for topic, analysis in topic_analyses.items():
+            if analysis.overall_score < 0.4:
+                remaining_gaps.append(f"{topic} (overall low)")
+            elif analysis.coverage_score < 0.3:
+                remaining_gaps.append(f"{topic} (insufficient coverage)")
+            elif analysis.quality_score < 0.3:
+                remaining_gaps.append(f"{topic} (low quality)")
+
+        global_state["remaining_gaps"] = remaining_gaps
+
+        # Add comprehensive state tracking
+        global_state["assessment_summary"] = {
+            "total_topics": len(topic_analyses),
+            "well_covered_topics": len([t for t, a in topic_analyses.items() if a.overall_score >= 0.7]),
+            "partially_covered_topics": len([t for t, a in topic_analyses.items() if 0.4 <= a.overall_score < 0.7]),
+            "poorly_covered_topics": len([t for t, a in topic_analyses.items() if a.overall_score < 0.4]),
+            "average_coverage": np.mean([a.coverage_score for a in topic_analyses.values()]),
+            "average_quality": np.mean([a.quality_score for a in topic_analyses.values()]),
+            "total_evidence_count": sum(a.evidence_count for a in topic_analyses.values())
+        }
+
 
     def _generate_web_search_queries(
             self,
@@ -271,46 +314,74 @@ class OnlineDeepSearch(DeepSearch):
             self,
             candidate_queries: List[str],
             performed_queries: List[str],
-            performed_embeddings: List[np.ndarray],
-            similarity_threshold: float = 0.8
+            performed_embeddings: List[np.ndarray]
     ) -> List[str]:
         """De-duplicate web search queries to avoid repeated searches"""
 
-        if not candidate_queries:
-            return []
+        if not hasattr(self, '_query_deduplicator'):
+            self._query_deduplicator = web_query_deduplicator.WebQueryDeduplicator(self.llm, self.embedding_model)
 
-        filtered_queries = []
+        filtered_queries, reasons = self._query_deduplicator.smart_deduplicate(
+            candidate_queries, performed_queries, performed_embeddings
+        )
 
-        for candidate in candidate_queries:
-            candidate_embedding = self.embedding_model.embed_query(candidate)
-            is_duplicate = False
-
-            # Check similarity with already executed queries
-            for i, performed_embedding in enumerate(performed_embeddings):
-                similarity = np.dot(candidate_embedding, performed_embedding)
-                if similarity > similarity_threshold:
-                    log.color_print(
-                        f"<think> Skipping duplicate web query '{candidate}' (similar to '{performed_queries[i]}', similarity: {similarity:.3f}) </think>\n"
-                    )
-                    is_duplicate = True
-                    break
-
-            # Check similarity with other candidate queries in the current batch
-            if not is_duplicate:
-                for existing in filtered_queries:
-                    existing_embedding = self.embedding_model.embed_query(existing)
-                    similarity = np.dot(candidate_embedding, existing_embedding)
-                    if similarity > similarity_threshold:
-                        log.color_print(
-                            f"<think> Skipping duplicate web query '{candidate}' (similar to '{existing}', similarity: {similarity:.3f}) </think>\n"
-                        )
-                        is_duplicate = True
-                        break
-
-            if not is_duplicate:
-                filtered_queries.append(candidate)
+        for i, (query, reason) in enumerate(zip(candidate_queries, reasons)):
+            if "Filtered" in reason:
+                log.color_print(f"<dedup> {reason} </dedup>\n")
+            else:
+                log.color_print(f"<dedup> Query '{query}' - {reason} </dedup>\n")
 
         return filtered_queries
+
+    def _process_web_metadata(self, web_results: List[RetrievalResult]) -> List[RetrievalResult]:
+        """Process the metadata of web page results to ensure that it does not exceed the Milvus limit"""
+        processed_results = []
+
+        for result in web_results:
+            if hasattr(result, 'metadata') and result.metadata:
+                # Truncate metadata that is too long
+                metadata_str = json.dumps(result.metadata, ensure_ascii=False)
+                if len(metadata_str) > 60000:
+                    truncated_metadata = {
+                        "source": result.metadata.get("source",""),
+                        "source_type": "web",
+                        "title": result.metadata.get("title", "")[:500],
+                    }
+
+                    for key, value in result.metadata.items():
+                        if key not in truncated_metadata and isinstance(value, str) and len(value) < 1000:
+                            truncated_metadata[key] = value
+
+                    result.metadata = truncated_metadata
+
+            processed_results.append(result)
+
+        return processed_results
+
+    def _filter_urls_by_domain(self, urls: List[str]) -> List[str]:
+        """
+        Filter URLs to retain only academic or authoritative sources.
+
+        This is particularly useful when using SearxNG, where many general-purpose
+        engines (e.g., GitHub, blogs) are included in results.
+
+        Academic domains are manually curated.
+        """
+        academic_domains = [
+            "springer.com", "tandfonline.com", "jstor.org", "sciencedirect.com",
+            "nature.com", "wiley.com", "cambridge.org", "oup.com", "sagepub.com",
+            "semanticscholar.org", "arxiv.org", "core.ac.uk", "pnas.org",
+            "pubmed.ncbi.nlm.nih.gov", "ncbi.nlm.nih.gov", "researchgate.net",
+        ]
+
+        def is_academic(url: str) -> bool:
+            return any(domain in url for domain in academic_domains)
+
+        filtered = [url for url in urls if is_academic(url)]
+        if not filtered:
+            log.color_print("<web_filter> No academic URLs found. Fallback to original list. </web_filter>\n")
+            return urls  # fallback if filter too strict
+        return filtered
 
     async def _execute_batch_web_search(self, web_queries: List[str]) -> List[RetrievalResult]:
         """Batch execute network searches to optimize resource management"""
@@ -341,16 +412,22 @@ class OnlineDeepSearch(DeepSearch):
 
             # Remove duplicate URLs and print final list
             unique_urls = list(set(all_urls))
-            log.color_print(f"<web_search> Total unique URLs to crawl: {len(unique_urls)} </web_search>")
 
-            if unique_urls:
+            # Filter academic sources
+            filtered_urls = self._filter_urls_by_domain(unique_urls)
+            log.color_print(f"<web_filter> Filtered academic URLs count: {len(filtered_urls)} </web_filter>\n")
+
+            if filtered_urls:
                 log.color_print("<web_urls_final> Final unique URLs to be processed:")
-                for i, url in enumerate(unique_urls, 1):
+                for i, url in enumerate(filtered_urls, 1):
                     log.color_print(f"  {i}. {url}")
                 log.color_print("</web_urls_final>\n")
+            else:
+                log.color_print(
+                    "<web_urls_final> No filtered URLs passed, skipping web integration. </web_urls_final>\n")
 
-            if unique_urls:
-                # Create a single temporary collection to store all network content
+            if filtered_urls:
+                # Create temp collection and load
                 temp_collection = f"web_search_batch_{int(time.time())}"
                 temp_collections.append(temp_collection)
 
@@ -360,7 +437,7 @@ class OnlineDeepSearch(DeepSearch):
                 # Batch load all URLs
                 from deepsearcher.offline_loading import load_from_website
                 await load_from_website(
-                    urls=unique_urls,
+                    urls=filtered_urls,  # << 👈 use filtered_urls here
                     collection_name=temp_collection,
                     collection_description=f"Batch web search results for queries: {', '.join(web_queries)}",
                     force_new_collection=True,
@@ -397,6 +474,8 @@ class OnlineDeepSearch(DeepSearch):
                             f"<web_integration> Cleaned up temporary collection: {temp_collection} </web_integration>\n")
                 except Exception as e:
                     log.color_print(f"<web_integration> Error cleaning up {temp_collection}: {e} </web_integration>\n")
+
+                all_web_results = self._process_web_metadata(all_web_results)
 
         return all_web_results
 

@@ -220,7 +220,17 @@ def init_config(config: Configuration):
                 route_collection=True,
                 text_window_splitter=True,
                 enable_web_search=True,
-                search_engines=['google', 'arxiv', 'google scholar', 'semantic_scholar', 'github', 'reddit'],
+                search_engines=[
+                    "google scholar",
+                    "semantic_scholar",
+                    "core",
+                    "arxiv",
+                    "pubmed",
+                    "sciencedirect",
+                    "springer",
+                    "taylor and francis",
+                    "jstor",
+                ],
             )
         ],
     )
