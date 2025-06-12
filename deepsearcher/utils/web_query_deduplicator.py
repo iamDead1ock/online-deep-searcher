@@ -1,4 +1,3 @@
-import log
 import numpy as np
 import re
 from typing import List, Tuple, Set
