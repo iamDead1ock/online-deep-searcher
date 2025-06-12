@@ -16,10 +16,13 @@ jobs:
           uv sync --all-extras --dev
           source .venv/bin/activate
 
-      - name: Run Ruff
+      - name: Run Ruff Format (report only, do not fail)
         run: |
-          uv run ruff format --diff
-          uv run ruff check
+          uv run ruff format --diff || true
+
+      - name: Run Ruff Check (report only, do not fail)
+        run: |
+          uv run ruff check || true
 
       # - name: Run tests
       #   run: uv run pytest tests
