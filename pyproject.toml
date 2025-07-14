@@ -1,0 +1,165 @@
+[project]
+name = "deepsearcher"
+version = "0.0.1"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "argparse>=1.4.0",
+    "fastapi>=0.115.9",
+    "firecrawl-py>=1.12.0",
+    "langchain-text-splitters>=0.3.6",
+    "numpy>=2.2.3",
+    "openai>=1.65.1",
+    "pdfplumber>=0.11.5",
+    "pymilvus>=2.5.4",
+    "termcolor>=2.5.0",
+    "tqdm>=4.67.1",
+    "uvicorn>=0.34.0",
+]
+description = "None"
+license = { file = "LICENSE"}
+authors = [
+    { name = "Cheney Zhang", email = "277584121@qq.com" },
+    { name = "SimFG", email = "bang.fu@zilliz.com" }
+]
+
+[project.urls]
+Homepage = "https://github.com/zilliztech/deep-searcher"
+
+[project.scripts]
+deepsearcher = "deepsearcher.cli:main"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.9.9",
+]
+
+[project.optional-dependencies]
+all = [
+    "deepsearcher[embedding, llm, file-loader]",
+]
+embedding = [
+    "boto3>=1.37.5",
+    "voyageai>=0.3.2",
+]
+llm = [
+    "anthropic>=0.49.0",
+    "google-generativeai>=0.8.4",
+    "ollama>=0.4.7",
+    "together>=1.4.1",
+]
+file-loader = [
+    "unstructured-ingest>=0.5.9",
+]
+aws = [
+    "boto3>=1.37.5",
+]
+voyageai = [
+    "voyageai>=0.3.2",
+]
+anthropic = [
+    "anthropic>=0.49.0",
+]
+google = [
+    "google-generativeai>=0.8.4",
+]
+ollama = [
+    "ollama>=0.4.7",
+]
+togetherai = [
+    "together>=1.4.1",
+]
+unstructured = [
+    "unstructured-ingest>=0.5.9",
+    "unstructured[all-docs]>=0.17.2",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = true
+
+
+[tool.ruff]
+# Exclude a variety of commonly ignored directories.
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".git-rewrite",
+    ".hg",
+    ".ipynb_checkpoints",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pyenv",
+    ".pytest_cache",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    ".vscode",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "site-packages",
+    "venv",
+    "tests",
+    "examples",
+]
+
+# Same as Black.
+line-length = 100
+indent-width = 4
+
+# Assume Python 3.10
+target-version = "py310"
+
+show-fixes = true
+
+[tool.ruff.lint]
+# Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
+# Enable isort (`I`)
+select = ["E4", "E7", "E9", "F", "I"]
+ignore = []
+
+# Allow fix for all enabled rules (when `--fix`) is provided.
+fixable = ["ALL"]
+unfixable = []
+
+# Allow unused variables when underscore-prefixed.
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.format]
+# Like Black, use double quotes for strings.
+quote-style = "double"
+
+# Like Black, indent with spaces, rather than tabs.
+indent-style = "space"
+
+# Like Black, respect magic trailing commas.
+skip-magic-trailing-comma = false
+
+# Like Black, automatically detect the appropriate line ending.
+line-ending = "auto"
+
+# Enable auto-formatting of code examples in docstrings. Markdown,
+# reStructuredText code/literal blocks and doctests are all supported.
+#
+# This is currently disabled by default, but it is planned for this
+# to be opt-out in the future.
+docstring-code-format = false
+
+# Set the line length limit used when formatting code snippets in
+# docstrings.
+#
+# This only has an effect when the `docstring-code-format` setting is
+# enabled.
+docstring-code-line-length = "dynamic"
