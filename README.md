@@ -18,7 +18,7 @@ I modified the Deep Searcher based on Zilliz's open source, mainly to improve th
 
 ![OnlineDeepSearcher](./assets/pic/Online-Deep-Searcher.png)
 
-## 💪 It can:
+## 💪 Online-Deep-Searcher can:
 - **Hybrid Retrieval**: Combines local knowledge base with dynamic web search for comprehensive coverage.
 - **Smart Gap Assessment**: Evaluates knowledge gaps using confidence scoring and triggers web searches when local results are insufficient.
 - **Academic Source Prioritization**: Filters web results to focus on high-quality, peer-reviewed content (e.g., arXiv, PubMed).
