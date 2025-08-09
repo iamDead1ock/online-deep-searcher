@@ -16,4 +16,6 @@ I modified the Deep Searcher based on Zilliz's open source, mainly to improve th
 
 ## 🔍 What is Online-Deep-Searcher?
 
+![OnlineDeepSearcher](./assets/pic/Online-Deep-Searcher.png)
+
 ## 🎉 Demo!
