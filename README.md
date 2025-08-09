@@ -26,3 +26,5 @@ I modified the Deep Searcher based on Zilliz's open source, mainly to improve th
 - **Iterative Search Optimization**: Refines queries over multiple rounds to maximize information gain and minimize redundancy.
 
 ## 🎉 Demo!
+
+![OnlineDeepSearcher](./assets/pic/demo.gif)
