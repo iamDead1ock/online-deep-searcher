@@ -3,7 +3,7 @@ from typing import Literal
 
 import yaml
 
-from deepsearcher.agent import ChainOfRAG, DeepSearch, NaiveRAG, OnlineDeepSearch
+from deepsearcher.agent import DeepSearch, NaiveRAG, OnlineDeepSearch
 from deepsearcher.agent.rag_router import RAGRouter
 from deepsearcher.embedding.base import BaseEmbedding
 from deepsearcher.llm.base import BaseLLM
